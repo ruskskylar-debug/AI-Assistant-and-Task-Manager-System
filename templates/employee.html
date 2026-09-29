@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Employee Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+
+    <!-- Hamburger Button -->
+    <button class="menuButton" id="menuButton" onclick="openMenu()">☰</button>
+
+    <!-- Sidebar -->
+    <div class="sidebar" id="sidebar">
+
+        <button class="closeButton" onclick="closeMenu()">×</button>
+
+        <h2>Employee Menu</h2>
+
+        <a href="{{ url_for('employee') }}">Dashboard</a>
+        <a href="{{ url_for('all_tasks') }}">My Tasks</a>
+        <a href="{{ url_for('communication') }}">Messages</a>
+        <a href="{{ url_for('ai_assistant') }}">Ask AI</a>
+        <a href="{{ url_for('account') }}">My Account</a>
+        <a href="{{ url_for('logout') }}">Logout</a>
+
+    </div>
+
+    <!-- Main Content -->
+    <div class="mainContent">
+
+        <div class="pageHeader">
+            <div>
+                <h1>Welcome, {{ username }}!</h1>
+                <p>Here is your work at a glance.</p>
+            </div>
+        </div>
+
+
+        <!-- Dashboard Cards -->
+        <div class="dashboardCards">
+
+            <!-- Today's Tasks -->
+            <div class="dashboardCard taskCard">
+
+                <h2>Today's Tasks</h2>
+
+                <div class="dashboardNumber">
+                    {{ todays_tasks|length }}
+                </div>
+
+                <p>
+                    Task{% if todays_tasks|length != 1 %}s{% endif %}
+                    for today
+                </p>
+
+                <a href="{{ url_for('all_tasks') }}" class="primaryButton">
+                    View My Tasks
+                </a>
+
+            </div>
+
+
+            <!-- This Week -->
+            <div class="dashboardCard weekCard">
+
+                <h2>This Week</h2>
+
+                <div class="dashboardNumber">
+                    {{ weekly_tasks|length }}
+                </div>
+
+                <p>
+                    Task{% if weekly_tasks|length != 1 %}s{% endif %}
+                    this week
+                </p>
+
+                <a href="{{ url_for('all_tasks') }}" class="secondaryButton">
+                    View Week
+                </a>
+
+            </div>
+
+
+            <!-- Messages -->
+            <div class="dashboardCard messageCard">
+
+                <h2>Messages</h2>
+
+                <div class="dashboardNumber">
+                    {{ unread_messages }}
+                </div>
+
+                <p>
+                    Unread message{% if unread_messages != 1 %}s{% endif %}
+                </p>
+
+                <a href="{{ url_for('communication') }}" class="secondaryButton">
+                    View Messages
+                </a>
+
+            </div>
+
+        </div>
+
+
+        <!-- Today's Tasks -->
+        <div class="dashboardSection">
+
+            <div class="sectionHeader">
+
+                <div>
+                    <h2>Today's Tasks</h2>
+                    <p>Your tasks that are due today.</p>
+                </div>
+
+                <a href="{{ url_for('all_tasks') }}" class="secondaryButton">
+                    See All Tasks
+                </a>
+
+            </div>
+
+
+            {% if todays_tasks %}
+
+                <div class="taskList">
+
+                    {% for task in todays_tasks %}
+
+                        <div class="taskItem">
+
+                            <div>
+                                <h3>{{ task['title'] }}</h3>
+
+                                {% if task['description'] %}
+                                    <p>{{ task['description'] }}</p>
+                                {% endif %}
+                            </div>
+
+                            <div class="taskDate">
+                                {{ task['task_date'] }}
+                            </div>
+
+                        </div>
+
+                    {% endfor %}
+
+                </div>
+
+            {% else %}
+
+                <div class="emptyState">
+
+                    <h3>No tasks for today</h3>
+
+                    <p>
+                        You don't have any tasks assigned for today.
+                    </p>
+
+                </div>
+
+            {% endif %}
+
+        </div>
+
+
+        <!-- Quick Actions -->
+        <div class="dashboardSection">
+
+            <h2>Quick Actions</h2>
+
+            <div class="quickActions">
+
+                <a href="{{ url_for('all_tasks') }}" class="quickAction">
+                    <span class="quickActionIcon">✓</span>
+                    <span>My Tasks</span>
+                </a>
+
+                <a href="{{ url_for('communication') }}" class="quickAction">
+                    <span class="quickActionIcon">✉</span>
+                    <span>Messages</span>
+                </a>
+
+                <a href="{{ url_for('account') }}" class="quickAction">
+                    <span class="quickActionIcon">⚙</span>
+                    <span>My Account</span>
+                </a>
+
+            </div>
+
+        </div>
+
+    </div>
+
+
+    <script>
+
+        function openMenu() {
+
+            document.getElementById("sidebar").classList.add("open");
+
+            document.getElementById("menuButton").style.display = "none";
+
+        }
+
+
+        function closeMenu() {
+
+            document.getElementById("sidebar").classList.remove("open");
+
+            document.getElementById("menuButton").style.display = "block";
+
+        }
+
+
+        document.addEventListener("click", function(event) {
+
+            var sidebar = document.getElementById("sidebar");
+            var menuButton = document.getElementById("menuButton");
+
+            if (
+                sidebar.classList.contains("open") &&
+                !sidebar.contains(event.target) &&
+                event.target !== menuButton
+            ) {
+
+                closeMenu();
+
+            }
+
+        });
+
+    </script>
+
+</body>
+</html>
