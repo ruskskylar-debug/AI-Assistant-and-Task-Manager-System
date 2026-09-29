@@ -1,0 +1,9 @@
+Flask
+Werkzeug
+PyPDF2
+python-docx
+openpyxl
+transformers
+torch
+safetensors
+accelerate
