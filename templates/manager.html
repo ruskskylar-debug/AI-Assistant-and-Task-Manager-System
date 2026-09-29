@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Manager Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body class="managerPage">
+
+    <button class="menuButton" id="menuButton" onclick="openMenu()">☰</button>
+
+    <div class="sidebar" id="sidebar">
+        <button class="closeButton" onclick="closeMenu()">×</button>
+        <h2>UPS Store</h2>
+        <a href="{{ url_for('manager') }}" class="activeMenuItem">Dashboard</a>
+        <a href="{{ url_for('manage_tasks') }}">Tasks</a>
+        <a href="{{ url_for('employees') }}">Employees</a>
+        <a href="{{ url_for('manager_communication') }}">Messages</a>
+        <a href="{{ url_for('ai_information') }}">AI Information</a>
+        <a href="{{ url_for('ai_assistant') }}">Ask AI</a>
+    <a href="{{ url_for('manager_account') }}">My Account</a>
+        <a href="{{ url_for('logout') }}">Logout</a>
+    </div>
+
+    <div class="pageContent">
+
+        <!-- Welcome -->
+        <div class="dashboardWelcome">
+            <h1>Welcome, {{ username }}!</h1>
+            <p>Manager Dashboard</p>
+        </div>
+
+
+        <!-- Dashboard Cards -->
+        <div class="dashboardCards">
+
+            <a href="/manage_tasks" class="dashboardCard">
+                <div class="dashboardIcon">✓</div>
+                <h2>Tasks</h2>
+                <p>Manage employee tasks</p>
+
+                {% if todays_tasks %}
+                <span class="cardNotification">
+                    {{ todays_tasks|length }}
+                </span>
+                {% endif %}
+            </a>
+
+
+            <a href="/employees" class="dashboardCard">
+                <div class="dashboardIcon">👥</div>
+                <h2>Employees</h2>
+                <p>Manage store employees</p>
+
+                <span class="cardNumber">
+                    {{ employee_count }}
+                </span>
+            </a>
+
+
+            <a href="/manager_communication" class="dashboardCard">
+                <div class="dashboardIcon">✉</div>
+                <h2>Communication</h2>
+                <p>Messages with employees</p>
+
+                {% if unread_messages > 0 %}
+                <span class="cardNotification">
+                    {{ unread_messages }}
+                </span>
+                {% endif %}
+            </a>
+
+
+            <a href="/ai_information" class="dashboardCard">
+                <div class="dashboardIcon">AI</div>
+                <h2>AI Information</h2>
+                <p>Manage information for the AI assistant</p>
+            </a>
+
+
+            <a href="/manager_account" class="dashboardCard">
+                <div class="dashboardIcon">⚙</div>
+                <h2>Account</h2>
+                <p>Manage your account</p>
+            </a>
+
+
+            <a href="/logout" class="dashboardCard">
+                <div class="dashboardIcon">→</div>
+                <h2>Logout</h2>
+                <p>Sign out of the manager portal</p>
+            </a>
+
+        </div>
+
+
+        <!-- Today's Tasks -->
+        <div class="dashboardSection">
+
+            <div class="sectionHeader">
+                <div>
+                    <h2>Today's Tasks</h2>
+                    <p>Tasks currently assigned to employees</p>
+                </div>
+
+                <a href="/manage_tasks" class="viewButton">
+                    View All
+                </a>
+            </div>
+
+
+            {% if todays_tasks %}
+
+                <div class="taskList">
+
+                    {% for task in todays_tasks %}
+
+                        <div class="taskItem">
+
+                            <div class="taskInformation">
+
+                                <h3>
+                                    {{ task["title"] }}
+                                </h3>
+
+                                <p>
+                                    {{ task["description"] }}
+                                </p>
+
+                                <span class="taskDate">
+                                    Assigned to {{ task["employee_name"] }}
+                                </span>
+
+                            </div>
+
+                        </div>
+
+                    {% endfor %}
+
+                </div>
+
+            {% else %}
+
+                <div class="emptyState">
+
+                    <h3>No tasks for today</h3>
+
+                    <p>
+                        There are currently no tasks assigned for today.
+                    </p>
+
+                </div>
+
+            {% endif %}
+
+        </div>
+
+
+        <!-- Quick Actions -->
+        <div class="quickActions">
+
+            <h2>Quick Actions</h2>
+
+            <div class="quickActionButtons">
+
+                <a href="/manage_tasks" class="quickActionButton">
+                    Add Task
+                </a>
+
+                <a href="/employees" class="quickActionButton">
+                    Add Employee
+                </a>
+
+                <a href="/manager_communication" class="quickActionButton">
+                    Send Message
+                </a>
+
+                <a href="/ai_information" class="quickActionButton">
+                    Add AI Information
+                </a>
+
+            </div>
+
+        </div>
+
+    </div>
+
+<script>
+function openMenu() {
+    document.getElementById("sidebar").classList.add("open");
+    document.getElementById("menuButton").style.display = "none";
+}
+function closeMenu() {
+    document.getElementById("sidebar").classList.remove("open");
+    document.getElementById("menuButton").style.display = "block";
+}
+document.addEventListener("click", function(event) {
+    const sidebar = document.getElementById("sidebar");
+    const button = document.getElementById("menuButton");
+    if (sidebar.classList.contains("open") && !sidebar.contains(event.target) && !button.contains(event.target)) closeMenu();
+});
+</script>
+
+</body>
+</html>
