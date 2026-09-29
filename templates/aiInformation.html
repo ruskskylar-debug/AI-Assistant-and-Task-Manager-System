@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html>
+<head>
+
+    <title>AI Information</title>
+
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+
+</head>
+
+<body>
+
+    <!-- Hamburger Menu -->
+    <button class="menuButton" id="menuButton" onclick="openMenu()">☰</button>
+
+
+    <!-- Sidebar -->
+    <div id="sidebar" class="sidebar">
+
+        <button class="closeButton" onclick="closeMenu()">×</button>
+
+        <h2>UPS Store</h2>
+
+        <a href="/manager">
+            Dashboard
+        </a>
+
+        <a href="/manage_tasks">
+            Tasks
+            {% if unread_tasks %}
+                <span class="notificationDot"></span>
+            {% endif %}
+        </a>
+
+        <a href="/employees">
+            Employees
+        </a>
+
+        <a href="/manager_communication">
+            Messages
+            {% if unread_messages %}
+                <span class="notificationDot"></span>
+            {% endif %}
+        </a>
+
+        <a href="/ai_information" class="activeMenuItem">
+            AI Information
+        </a>
+
+        <a href="{{ url_for('ai_assistant') }}">
+            Ask AI
+        </a>
+
+        <a href="/manager_account">
+            My Account
+        </a>
+
+        <a href="/logout">
+            Logout
+        </a>
+
+    </div>
+
+
+    <!-- Main Content -->
+    <div class="pageContent">
+
+        <!-- Page Header -->
+        <div class="topHeader">
+
+            <div>
+
+                <h1>AI Information</h1>
+
+                <p>
+                    Add information that the AI Assistant can use
+                    to help with store questions.
+                </p>
+
+            </div>
+
+        </div>
+
+
+        <!-- Information Box -->
+        <div class="infoBox">
+
+            <h2>How AI Information Works</h2>
+
+            <p>
+                Add store-specific information here so the AI Assistant
+                can use it when answering employee questions.
+            </p>
+
+            <p>
+                You can type information directly or upload a file.
+                Supported files are PDF, Word documents, and Excel spreadsheets.
+            </p>
+
+            <p>
+                Examples include pricing information, packaging rules,
+                printing information, and other store procedures.
+            </p>
+
+        </div>
+
+
+        <!-- Add Information -->
+        <div class="dashboardSection">
+
+            <h2>Add AI Information</h2>
+
+            <p>
+                Enter information manually or upload a document.
+            </p>
+
+
+            <form
+                action="/add_ai_information"
+                method="POST"
+                enctype="multipart/form-data"
+                class="aiInformationForm"
+            >
+
+                <!-- Title -->
+                <div class="formGroup">
+
+                    <label for="title">
+                        Information Title
+                    </label>
+
+                    <input
+                        type="text"
+                        id="title"
+                        name="title"
+                        placeholder="Example: Printing Price Rules"
+                    >
+
+                    <small>
+                        Give this information a name so it is easy to find later.
+                    </small>
+
+                </div>
+
+
+                <!-- Text Information -->
+                <div class="formGroup">
+
+                    <label for="information">
+                        Information
+                    </label>
+
+                    <textarea
+                        id="information"
+                        name="information"
+                        rows="10"
+                        placeholder="Type store information here..."
+                    ></textarea>
+
+                </div>
+
+
+                <!-- File Upload -->
+                <div class="formGroup">
+
+                    <label for="file">
+                        Upload a File
+                    </label>
+
+                    <input
+                        type="file"
+                        id="file"
+                        name="file"
+                        accept=".pdf,.docx,.xlsx"
+                    >
+
+                    <small>
+                        Accepted file types: PDF, DOCX, and Excel XLSX.
+                    </small>
+
+                </div>
+
+
+                <!-- Submit -->
+                <button
+                    type="submit"
+                    class="primaryButton"
+                >
+                    Save AI Information
+                </button>
+
+            </form>
+
+        </div>
+
+
+        <!-- Saved Information -->
+        <div class="dashboardSection">
+
+            <div class="sectionHeader">
+
+                <div>
+
+                    <h2>Saved AI Information</h2>
+
+                    <p>
+                        Information currently available to the AI Assistant.
+                    </p>
+
+                </div>
+
+            </div>
+
+
+            {% if information %}
+
+                <div class="aiInformationList">
+
+                    {% for item in information %}
+
+                        <div class="aiInformationCard">
+
+                            <div class="aiInformationCardContent">
+
+                                <div class="aiInformationIcon">
+                                    ✨
+                                </div>
+
+
+                                <div>
+
+                                    <h3>
+                                        {{ item["title"] }}
+                                    </h3>
+
+                                    {% if item["filename"] %}
+
+                                        <p class="fileName">
+                                            File: {{ item["filename"] }}
+                                        </p>
+
+                                    {% else %}
+
+                                        <p class="fileName">
+                                            Manually entered information
+                                        </p>
+
+                                    {% endif %}
+
+
+                                    <p class="fileType">
+
+                                        Type:
+                                        {{ item["file_type"] }}
+
+                                        <span class="informationDate">
+                                            Added {{ item["created_at"] }}
+                                        </span>
+
+                                    </p>
+
+                                </div>
+
+                            </div>
+
+
+                            <div class="aiInformationActions">
+
+                                <a
+                                    href="/view_ai_information/{{ item['id'] }}"
+                                    class="viewButton"
+                                >
+                                    View
+                                </a>
+
+
+                                <form
+                                    action="/delete_ai_information/{{ item['id'] }}"
+                                    method="POST"
+                                    onsubmit="return confirmDelete();"
+                                >
+
+                                    <button
+                                        type="submit"
+                                        class="deleteButton"
+                                    >
+                                        Delete
+                                    </button>
+
+                                </form>
+
+                            </div>
+
+                        </div>
+
+                    {% endfor %}
+
+                </div>
+
+            {% else %}
+
+                <div class="emptyState">
+
+                    <div class="emptyStateIcon">
+                        ✨
+                    </div>
+
+                    <h3>
+                        No AI information yet
+                    </h3>
+
+                    <p>
+                        Add store information above to begin building
+                        the AI's knowledge.
+                    </p>
+
+                </div>
+
+            {% endif %}
+
+        </div>
+
+    </div>
+
+
+    <!-- JavaScript -->
+    <script>
+
+        function openMenu() {
+
+            document.getElementById("sidebar").classList.add("open");
+
+            document.querySelector(".menuButton").innerHTML = "×";
+
+            document.querySelector(".menuButton").onclick = closeMenu;
+
+        }
+
+
+        function closeMenu() {
+
+            document.getElementById("sidebar").classList.remove("open");
+
+            document.querySelector(".menuButton").innerHTML = "☰";
+
+            document.querySelector(".menuButton").onclick = openMenu;
+
+        }
+
+
+        // Close the menu when clicking outside of it
+        document.addEventListener("click", function(event) {
+
+            const menu = document.getElementById("sidebar");
+
+            const menuButton = document.querySelector(".menuButton");
+
+
+            if (
+                menu.classList.contains("open") &&
+                !menu.contains(event.target) &&
+                !menuButton.contains(event.target)
+            ) {
+
+                closeMenu();
+
+            }
+
+        });
+
+
+        // Confirmation before deleting AI information
+        function confirmDelete() {
+
+            return confirm(
+                "Are you sure you want to delete this AI information? This cannot be undone."
+            );
+
+        }
+
+    </script>
+
+</body>
+</html>
