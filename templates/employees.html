@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Employees</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<button class="menuButton" id="menuButton" onclick="openMenu()">☰</button>
+
+<div class="sidebar" id="sidebar">
+    <button class="closeButton" onclick="closeMenu()">×</button>
+    <h2>UPS Store</h2>
+    <a href="{{ url_for('manager') }}">Dashboard</a>
+    <a href="{{ url_for('manage_tasks') }}">Tasks</a>
+    <a href="{{ url_for('employees') }}" class="activeMenuItem">Employees</a>
+    <a href="{{ url_for('manager_communication') }}">Messages</a>
+    <a href="{{ url_for('ai_information') }}">AI Information</a>
+    <a href="{{ url_for('ai_assistant') }}">Ask AI</a>
+    <a href="{{ url_for('manager_account') }}">My Account</a>
+    <a href="{{ url_for('logout') }}">Logout</a>
+</div>
+
+<div class="mainContent">
+    <div class="pageHeader">
+        <div>
+            <h1>Employees</h1>
+            <p>Manage store employees and their accounts.</p>
+        </div>
+    </div>
+
+    <div class="employeePageGrid">
+        <section class="employeeAddCard">
+            <h2>Add Employee</h2>
+            <p>Create a login for a new store employee.</p>
+            <form action="{{ url_for('add_employee') }}" method="POST">
+                <label>Username</label>
+                <input type="text" name="username" placeholder="Employee username" required>
+
+                <label>Password</label>
+                <div class="password-container">
+                    <input type="password" name="password" id="newEmployeePassword" placeholder="Create password" required>
+                    <button type="button" class="show-password-button" onclick="togglePassword('newEmployeePassword', this)">Show</button>
+                </div>
+
+                <button type="submit" class="primaryButton">Add Employee</button>
+            </form>
+        </section>
+
+        <section class="employeeListSection">
+            <div class="sectionHeader">
+                <div>
+                    <h2>Current Employees</h2>
+                    <p>{{ employees|length }} employee{% if employees|length != 1 %}s{% endif %}</p>
+                </div>
+            </div>
+
+            <div class="employeeGrid">
+                {% for employee in employees %}
+                <article class="employeeProfileCard">
+                    <div class="employeeProfileTop">
+                        <div class="employeeAvatar">{{ employee['username'][0]|upper }}</div>
+                        <div>
+                            <h3>{{ employee['username'] }}</h3>
+                            <p>Employee account</p>
+                        </div>
+                    </div>
+
+                    <div class="employeeActionsPanel">
+                        <form action="{{ url_for('change_employee_password', employee_id=employee['id']) }}" method="POST">
+                            <label>Change Password</label>
+                            <div class="password-container">
+                                <input type="password" name="password" id="password{{ employee['id'] }}" placeholder="New password" required>
+                                <button type="button" class="show-password-button" onclick="togglePassword('password{{ employee['id'] }}', this)">Show</button>
+                            </div>
+                            <button type="submit" class="secondaryButton">Update Password</button>
+                        </form>
+
+                        <form action="{{ url_for('delete_employee', employee_id=employee['id']) }}" method="POST" onsubmit="return confirm('Are you sure you want to remove this employee? Their tasks and messages will also be deleted.');">
+                            <button type="submit" class="deleteButton">Remove Employee</button>
+                        </form>
+                    </div>
+                </article>
+                {% else %}
+                <div class="emptyState">
+                    <h3>No employees yet</h3>
+                    <p>Add an employee using the form above.</p>
+                </div>
+                {% endfor %}
+            </div>
+        </section>
+    </div>
+</div>
+
+<script>
+function openMenu() {
+    document.getElementById("sidebar").classList.add("open");
+    document.getElementById("menuButton").style.display = "none";
+}
+function closeMenu() {
+    document.getElementById("sidebar").classList.remove("open");
+    document.getElementById("menuButton").style.display = "block";
+}
+document.addEventListener("click", function(event) {
+    const sidebar = document.getElementById("sidebar");
+    const button = document.getElementById("menuButton");
+    if (sidebar.classList.contains("open") && !sidebar.contains(event.target) && !button.contains(event.target)) closeMenu();
+});
+function togglePassword(inputId, button) {
+    const input = document.getElementById(inputId);
+    input.type = input.type === "password" ? "text" : "password";
+    button.textContent = input.type === "password" ? "Show" : "Hide";
+}
+</script>
+</body>
+</html>
