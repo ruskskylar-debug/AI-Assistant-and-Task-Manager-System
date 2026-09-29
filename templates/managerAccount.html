@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>My Account</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+
+    <!-- Hamburger Button -->
+    <button class="menuButton" id="menuButton" onclick="openMenu()">☰</button>
+
+    <!-- Sidebar -->
+    <div class="sidebar" id="sidebar">
+
+        <button class="closeButton" onclick="closeMenu()">×</button>
+
+        <h2>Manager Menu</h2>
+
+        <a href="{{ url_for('manager') }}">Dashboard</a>
+        <a href="{{ url_for('manage_tasks') }}">Tasks</a>
+        <a href="{{ url_for('employees') }}">Employees</a>
+        <a href="{{ url_for('manager_communication') }}">Messages</a>
+        <a href="{{ url_for('ai_information') }}">AI Information</a>
+        <a href="{{ url_for('ai_assistant') }}">Ask AI</a>
+    <a href="{{ url_for('manager_account') }}">My Account</a>
+        <a href="{{ url_for('logout') }}">Logout</a>
+
+    </div>
+
+    <!-- Main Content -->
+    <div class="mainContent">
+
+        <div class="pageHeader">
+            <div>
+                <h1>My Account</h1>
+                <p>Manage your manager account information.</p>
+            </div>
+        </div>
+
+        <!-- Account Information -->
+        <div class="informationCard">
+
+            <h2>Account Information</h2>
+
+            <p>
+                You can change your manager username and password below.
+            </p>
+
+            <form action="{{ url_for('change_manager_account') }}" method="POST">
+
+                <!-- Current Password -->
+                <div class="formGroup">
+
+                    <label for="currentPassword">
+                        Current Password
+                    </label>
+
+                    <input
+                        type="password"
+                        id="currentPassword"
+                        name="current_password"
+                        required
+                    >
+
+                </div>
+
+                <!-- New Username -->
+                <div class="formGroup">
+
+                    <label for="newUsername">
+                        New Username
+                    </label>
+
+                    <input
+                        type="text"
+                        id="newUsername"
+                        name="new_username"
+                        value="{{ username }}"
+                        required
+                    >
+
+                </div>
+
+                <!-- New Password -->
+                <div class="formGroup">
+
+                    <label for="newPassword">
+                        New Password
+                    </label>
+
+                    <input
+                        type="password"
+                        id="newPassword"
+                        name="new_password"
+                    >
+
+                    <small>
+                        Leave blank if you do not want to change your password.
+                    </small>
+
+                </div>
+
+                <!-- Confirm Password -->
+                <div class="formGroup">
+
+                    <label for="confirmPassword">
+                        Confirm New Password
+                    </label>
+
+                    <input
+                        type="password"
+                        id="confirmPassword"
+                        name="confirm_password"
+                    >
+
+                </div>
+
+                <button type="submit" class="primaryButton">
+                    Save Changes
+                </button>
+
+            </form>
+
+        </div>
+
+    </div>
+
+
+    <script>
+
+        function openMenu() {
+            document.getElementById("sidebar").classList.add("open");
+            document.getElementById("menuButton").style.display = "none";
+        }
+
+        function closeMenu() {
+            document.getElementById("sidebar").classList.remove("open");
+            document.getElementById("menuButton").style.display = "block";
+        }
+
+        document.addEventListener("click", function(event) {
+
+            var sidebar = document.getElementById("sidebar");
+            var menuButton = document.getElementById("menuButton");
+
+            if (
+                sidebar.classList.contains("open") &&
+                !sidebar.contains(event.target) &&
+                event.target !== menuButton
+            ) {
+                closeMenu();
+            }
+
+        });
+
+    </script>
+
+</body>
+</html>
