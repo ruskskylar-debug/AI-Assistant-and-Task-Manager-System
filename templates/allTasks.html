@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>My Tasks</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+
+    <!-- Hamburger Button -->
+    <button class="menuButton" id="menuButton" onclick="openMenu()">☰</button>
+
+    <!-- Sidebar -->
+    <div class="sidebar" id="sidebar">
+
+        <button class="closeButton" onclick="closeMenu()">×</button>
+
+        <h2>Employee Menu</h2>
+
+        <a href="{{ url_for('employee') }}">Dashboard</a>
+        <a href="{{ url_for('all_tasks') }}">My Tasks</a>
+        <a href="{{ url_for('communication') }}">Messages</a>
+        <a href="{{ url_for('ai_assistant') }}">Ask AI</a>
+        <a href="{{ url_for('account') }}">My Account</a>
+        <a href="{{ url_for('logout') }}">Logout</a>
+
+    </div>
+
+
+    <!-- Main Content -->
+    <div class="mainContent">
+
+        <div class="pageHeader">
+
+            <div>
+                <h1>My Tasks</h1>
+                <p>View your tasks for the week.</p>
+            </div>
+
+        </div>
+
+
+        <!-- Week Navigation -->
+        <div class="weekNavigation">
+
+            <a
+                href="{{ url_for('all_tasks', week=previous_week) }}"
+                class="secondaryButton"
+            >
+                ← Previous Week
+            </a>
+
+            <div class="weekTitle">
+
+                <h2>
+                    {{ week_start.strftime('%B %d') }}
+                    -
+                    {{ week_end.strftime('%B %d, %Y') }}
+                </h2>
+
+                {% if is_current_week %}
+
+                    <span class="currentWeekLabel">
+                        Current Week
+                    </span>
+
+                {% endif %}
+
+            </div>
+
+            <a
+                href="{{ url_for('all_tasks', week=next_week) }}"
+                class="secondaryButton"
+            >
+                Next Week →
+            </a>
+
+        </div>
+
+
+        <!-- Today Button -->
+        {% if not is_current_week %}
+
+            <div class="todayButtonContainer">
+
+                <a
+                    href="{{ url_for('all_tasks') }}"
+                    class="primaryButton"
+                >
+                    Go to Today
+                </a>
+
+            </div>
+
+        {% endif %}
+
+
+        <!-- Weekly Calendar -->
+        <div class="weeklyCalendar">
+
+            {% for day in week_days %}
+
+                <div
+                    class="dayColumn
+                    {% if day['is_today'] %}todayColumn{% endif %}"
+                >
+
+                    <!-- Day Header -->
+                    <div class="dayHeader">
+
+                        <div class="dayName">
+                            {{ day['day_name'] }}
+                        </div>
+
+                        <div class="dayDate">
+                            {{ day['date'].strftime('%b %d') }}
+                        </div>
+
+                        {% if day['is_today'] %}
+
+                            <span class="todayLabel">
+                                TODAY
+                            </span>
+
+                        {% endif %}
+
+                    </div>
+
+
+                    <!-- Tasks -->
+                    <div class="dayTasks">
+
+                        {% if day['tasks'] %}
+
+                            {% for task in day['tasks'] %}
+
+                                <div class="taskCard">
+
+                                    <h3>
+                                        {{ task['title'] }}
+                                    </h3>
+
+                                    {% if task['description'] %}
+
+                                        <p>
+                                            {{ task['description'] }}
+                                        </p>
+
+                                    {% endif %}
+
+                                </div>
+
+                            {% endfor %}
+
+                        {% else %}
+
+                            <div class="noTasks">
+
+                                <span>No tasks</span>
+
+                            </div>
+
+                        {% endif %}
+
+                    </div>
+
+                </div>
+
+            {% endfor %}
+
+        </div>
+
+
+        <!-- Information -->
+        <div class="taskInformation">
+
+            <p>
+                Tasks are shown Sunday through Saturday.
+                Use the arrows above to move between weeks.
+            </p>
+
+        </div>
+
+    </div>
+
+
+    <script>
+
+        function openMenu() {
+
+            document.getElementById("sidebar").classList.add("open");
+
+            document.getElementById("menuButton").style.display = "none";
+
+        }
+
+
+        function closeMenu() {
+
+            document.getElementById("sidebar").classList.remove("open");
+
+            document.getElementById("menuButton").style.display = "block";
+
+        }
+
+
+        document.addEventListener("click", function(event) {
+
+            var sidebar = document.getElementById("sidebar");
+            var menuButton = document.getElementById("menuButton");
+
+            if (
+                sidebar.classList.contains("open") &&
+                !sidebar.contains(event.target) &&
+                event.target !== menuButton
+            ) {
+
+                closeMenu();
+
+            }
+
+        });
+
+    </script>
+
+</body>
+</html>
