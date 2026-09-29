@@ -1,0 +1,1930 @@
+from flask import Flask, render_template, request, redirect, session
+import sqlite3
+import os
+from datetime import date, datetime, timedelta
+
+from werkzeug.security import generate_password_hash, check_password_hash
+
+from PyPDF2 import PdfReader
+from docx import Document
+from openpyxl import load_workbook
+
+# Qwen is loaded only when the first AI question is asked.
+try:
+    from transformers import AutoTokenizer, AutoModelForCausalLM
+except ImportError:
+    AutoTokenizer = None
+    AutoModelForCausalLM = None
+
+import re
+from itertools import permutations
+
+
+app = Flask(__name__)
+app.secret_key = "ups-store-secret-key"
+
+DATABASE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "database.db")
+
+ALLOWED_EXTENSIONS = {"pdf", "docx", "xlsx"}
+QWEN_MODEL_NAME = os.environ.get("QWEN_MODEL", "Qwen/Qwen2.5-1.5B-Instruct")
+qwen_tokenizer = None
+qwen_model = None
+
+
+# ============================================================
+# DATABASE
+# ============================================================
+
+def get_db_connection():
+    conn = sqlite3.connect(DATABASE)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def initialize_database():
+
+    conn = get_db_connection()
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL,
+            role TEXT NOT NULL
+        )
+    """)
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            employee_id INTEGER NOT NULL,
+            title TEXT NOT NULL,
+            description TEXT,
+            task_date TEXT NOT NULL,
+            FOREIGN KEY (employee_id) REFERENCES users(id)
+        )
+    """)
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sender_id INTEGER NOT NULL,
+            recipient_id INTEGER NOT NULL,
+            subject TEXT NOT NULL,
+            message TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            is_read INTEGER DEFAULT 0,
+            FOREIGN KEY (sender_id) REFERENCES users(id),
+            FOREIGN KEY (recipient_id) REFERENCES users(id)
+        )
+    """)
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS notifications (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            message TEXT NOT NULL,
+            is_read INTEGER DEFAULT 0,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+    """)
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS ai_information (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            filename TEXT,
+            file_type TEXT,
+            information TEXT,
+            created_at TEXT NOT NULL
+        )
+    """)
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS packaging_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            description TEXT,
+            product_number TEXT,
+            width REAL NOT NULL,
+            depth REAL NOT NULL,
+            height REAL NOT NULL,
+            box_price REAL,
+            source_information_id INTEGER,
+            FOREIGN KEY (source_information_id) REFERENCES ai_information(id)
+        )
+    """)
+
+    # Migrate older versions of the database so existing data is preserved.
+    user_columns = [row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()]
+    if "name" not in user_columns:
+        conn.execute("ALTER TABLE users ADD COLUMN name TEXT")
+        conn.execute("UPDATE users SET name = username WHERE name IS NULL")
+
+    message_columns = [row[1] for row in conn.execute("PRAGMA table_info(messages)").fetchall()]
+    if "subject" not in message_columns:
+        conn.execute("ALTER TABLE messages ADD COLUMN subject TEXT DEFAULT 'Message'")
+        conn.execute("UPDATE messages SET subject = 'Message' WHERE subject IS NULL OR subject = ''")
+
+    notification_columns = [row[1] for row in conn.execute("PRAGMA table_info(notifications)").fetchall()]
+    if "message" not in notification_columns:
+        conn.execute("ALTER TABLE notifications ADD COLUMN message TEXT DEFAULT ''")
+    if "is_read" not in notification_columns:
+        conn.execute("ALTER TABLE notifications ADD COLUMN is_read INTEGER DEFAULT 0")
+
+    ai_columns = [row[1] for row in conn.execute("PRAGMA table_info(ai_information)").fetchall()]
+    if "filename" not in ai_columns or "information" not in ai_columns:
+        # Older versions used file_name/content/information_type. Rebuild the table
+        # so the new columns are compatible while keeping the existing information.
+        conn.execute("ALTER TABLE ai_information RENAME TO ai_information_old")
+        conn.execute("""
+            CREATE TABLE ai_information (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                filename TEXT,
+                file_type TEXT,
+                information TEXT,
+                created_at TEXT NOT NULL
+            )
+        """)
+        old_columns = [row[1] for row in conn.execute("PRAGMA table_info(ai_information_old)").fetchall()]
+        old_filename = "file_name" if "file_name" in old_columns else "NULL"
+        old_file_type = "information_type" if "information_type" in old_columns else "NULL"
+        old_information = "content" if "content" in old_columns else "NULL"
+        conn.execute(f"""
+            INSERT INTO ai_information (id, title, filename, file_type, information, created_at)
+            SELECT id, title, {old_filename}, {old_file_type}, {old_information}, created_at
+            FROM ai_information_old
+        """)
+        conn.execute("DROP TABLE ai_information_old")
+
+
+    # Create default accounts if there are no users yet
+    user_count = conn.execute(
+        "SELECT COUNT(*) FROM users"
+    ).fetchone()[0]
+
+    if user_count == 0:
+
+        conn.execute(
+            """
+            INSERT INTO users (name, username, password, role)
+            VALUES (?, ?, ?, ?)
+            """,
+            (
+                "Manager",
+                "manager",
+                generate_password_hash("manager123"),
+                "manager"
+            )
+        )
+
+        conn.execute(
+            """
+            INSERT INTO users (name, username, password, role)
+            VALUES (?, ?, ?, ?)
+            """,
+            (
+                "Sarah",
+                "Sarah",
+                generate_password_hash("password"),
+                "employee"
+            )
+        )
+
+        conn.execute(
+            """
+            INSERT INTO users (name, username, password, role)
+            VALUES (?, ?, ?, ?)
+            """,
+            (
+                "Mike",
+                "Mike",
+                generate_password_hash("password"),
+                "employee"
+            )
+        )
+
+    conn.commit()
+    conn.close()
+
+
+# ============================================================
+# HELPER FUNCTIONS
+# ============================================================
+
+def get_current_user():
+
+    if "user_id" not in session:
+        return None
+
+    conn = get_db_connection()
+
+    user = conn.execute(
+        "SELECT * FROM users WHERE id = ?",
+        (session["user_id"],)
+    ).fetchone()
+
+    conn.close()
+
+    return user
+
+
+def clean_old_tasks(conn):
+
+    old_date = date.today() - timedelta(days=30)
+
+    conn.execute(
+        "DELETE FROM tasks WHERE task_date < ?",
+        (old_date.isoformat(),)
+    )
+
+
+def get_week_dates(selected_date):
+
+    week_start = selected_date - timedelta(
+        days=(selected_date.weekday() + 1) % 7
+    )
+
+    week_end = week_start + timedelta(days=6)
+
+    week_days = []
+
+    day_names = [
+        "Sunday",
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday"
+    ]
+
+    for i in range(7):
+
+        current_day = week_start + timedelta(days=i)
+
+        week_days.append({
+            "date": current_day,
+            "day_name": day_names[i],
+            "is_today": current_day == date.today(),
+            "tasks": []
+        })
+
+    return week_start, week_end, week_days
+
+
+def get_week_from_request():
+
+    week_value = request.args.get("week")
+
+    if week_value:
+
+        try:
+            return datetime.strptime(
+                week_value,
+                "%Y-%m-%d"
+            ).date()
+
+        except ValueError:
+            pass
+
+    return date.today()
+
+
+def allowed_file(filename):
+
+    if not filename:
+        return False
+
+    if "." not in filename:
+        return False
+
+    extension = filename.rsplit(".", 1)[1].lower()
+
+    return extension in ALLOWED_EXTENSIONS
+
+
+def get_file_extension(filename):
+
+    return filename.rsplit(".", 1)[1].lower()
+
+
+# ============================================================
+# QWEN + AI KNOWLEDGE RETRIEVAL
+# ============================================================
+
+def load_qwen():
+    global qwen_tokenizer, qwen_model
+
+    if qwen_tokenizer is not None and qwen_model is not None:
+        return qwen_tokenizer, qwen_model
+
+    if AutoTokenizer is None or AutoModelForCausalLM is None:
+        raise RuntimeError(
+            "Qwen is not installed. Run: py -m pip install -r requirements.txt"
+        )
+
+    qwen_tokenizer = AutoTokenizer.from_pretrained(QWEN_MODEL_NAME)
+    qwen_model = AutoModelForCausalLM.from_pretrained(QWEN_MODEL_NAME)
+    qwen_model.eval()
+
+    return qwen_tokenizer, qwen_model
+
+
+def extract_dimensions(question):
+    """Return three dimensions when a question contains a pattern such as 9 x 7 x 4."""
+    match = re.search(
+        r"(?<!\d)(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)(?!\d)",
+        question.lower()
+    )
+    if not match:
+        return None
+    return tuple(float(value) for value in match.groups())
+
+
+def box_fits(item_dimensions, box_dimensions):
+    """Allow the item to be rotated; every item dimension must fit in a box dimension."""
+    return any(
+        all(item <= box + 1e-9 for item, box in zip(item_dimensions, orientation))
+        for orientation in permutations(box_dimensions)
+    )
+
+
+def retrieve_packaging_answer(question):
+    """Use structured packaging data for dimension/price questions instead of sending the full Excel text to Qwen."""
+    item_dimensions = extract_dimensions(question)
+    if not item_dimensions:
+        return None
+
+    conn = get_db_connection()
+    rows = conn.execute(
+        """
+        SELECT id, description, product_number, width, depth, height, box_price
+        FROM packaging_items
+        WHERE width IS NOT NULL AND depth IS NOT NULL AND height IS NOT NULL
+        """
+    ).fetchall()
+    conn.close()
+
+    suitable = []
+    for row in rows:
+        box_dimensions = (float(row["width"]), float(row["depth"]), float(row["height"]))
+        if box_fits(item_dimensions, box_dimensions):
+            suitable.append({
+                "id": row["id"],
+                "description": row["description"] or "Box",
+                "product_number": row["product_number"],
+                "width": box_dimensions[0],
+                "depth": box_dimensions[1],
+                "height": box_dimensions[2],
+                "box_price": row["box_price"],
+                "volume": box_dimensions[0] * box_dimensions[1] * box_dimensions[2]
+            })
+
+    if not suitable:
+        return {
+            "type": "packaging",
+            "item_dimensions": item_dimensions,
+            "answer": "I could not find a box in the saved packaging information that can accommodate those dimensions.",
+            "context": "No suitable box was found in the structured packaging data.",
+            "sources": []
+        }
+
+    suitable.sort(key=lambda item: (item["volume"], item["box_price"] if item["box_price"] is not None else float("inf")))
+    best = suitable[0]
+
+    return {
+        "type": "packaging",
+        "item_dimensions": item_dimensions,
+        "answer": (
+            f"The smallest suitable box found for an item measuring "
+            f"{item_dimensions[0]:g} x {item_dimensions[1]:g} x {item_dimensions[2]:g} "
+            f"is {best["width"]:g} x {best["depth"]:g} x {best["height"]:g}"
+            f" (Product #{best["product_number"]})"
+            f", with a retail price of {"$%.2f" % best["box_price"] if best["box_price"] is not None else "not listed"}."
+        ),
+        "best": best,
+        "context": (
+            f"Item dimensions: {item_dimensions[0]:g} x {item_dimensions[1]:g} x {item_dimensions[2]:g}.\n"
+            f"Smallest suitable box found: {best['description']} ({best['width']:g} x {best['depth']:g} x {best['height']:g}).\n"
+            f"Product number: {best['product_number'] or 'Not listed'}.\n"
+            f"Box retail price: {('$%.2f' % best['box_price']) if best['box_price'] is not None else 'Not listed'}."
+        ),
+        "sources": [{"title": "Packaging Matrix", "filename": "Uploaded Excel packaging data"}]
+    }
+
+
+def retrieve_ai_information(question, limit=5):
+    """Find the most relevant saved store-information chunks before Qwen answers."""
+    conn = get_db_connection()
+    rows = conn.execute(
+        "SELECT id, title, filename, information FROM ai_information ORDER BY created_at DESC"
+    ).fetchall()
+    conn.close()
+
+    question_words = set(
+        word.lower()
+        for word in re.findall(r"[A-Za-z0-9]+", question)
+        if len(word) > 2
+    )
+
+    scored = []
+
+    for row in rows:
+        full_text = row["information"] or ""
+        chunks = [full_text[i:i + 1200] for i in range(0, len(full_text), 1200)] or [""]
+
+        for chunk_number, chunk in enumerate(chunks, start=1):
+            searchable = f"{row['title']} {row['filename'] or ''} {chunk}"
+            text_words = set(
+                word.lower()
+                for word in re.findall(r"[A-Za-z0-9]+", searchable)
+                if len(word) > 2
+            )
+            score = len(question_words & text_words)
+
+            if question.lower() in searchable.lower():
+                score += 10
+
+            if score > 0:
+                scored.append({
+                    "id": row["id"],
+                    "title": row["title"],
+                    "filename": row["filename"],
+                    "information": chunk,
+                    "chunk_number": chunk_number,
+                    "score": score
+                })
+
+    scored.sort(key=lambda item: item["score"], reverse=True)
+    return scored[:limit]
+
+
+def ask_qwen(question, context, sources=None):
+    tokenizer, model = load_qwen()
+
+    if not context:
+        return "I could not find information about that in the store's saved information. Please check with the manager."
+
+    system_prompt = (
+        "You are the UPS Store employee information assistant. "
+        "Use only the store information provided. Do not invent prices, dimensions, policies, or procedures. "
+        "For packaging questions, trust the calculated result supplied by the application rather than doing your own box comparison. "
+        "Do not call a box the smallest unless the application has identified it as the smallest suitable box. "
+        "Keep the answer concise and practical for a store employee."
+    )
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {
+            "role": "user",
+            "content": f"STORE INFORMATION:\n{context}\n\nEMPLOYEE QUESTION:\n{question}"
+        }
+    ]
+
+    prompt = tokenizer.apply_chat_template(
+        messages,
+        tokenize=False,
+        add_generation_prompt=True
+    )
+
+    inputs = tokenizer(
+        prompt,
+        return_tensors="pt",
+        truncation=True,
+        max_length=1800
+    )
+
+    if hasattr(model, "device"):
+        inputs = {key: value.to(model.device) for key, value in inputs.items()}
+
+    with __import__("torch").no_grad():
+        outputs = model.generate(
+            **inputs,
+            max_new_tokens=100,
+            do_sample=False,
+            pad_token_id=tokenizer.eos_token_id
+        )
+
+    generated = outputs[0][inputs["input_ids"].shape[1]:]
+    answer = tokenizer.decode(generated, skip_special_tokens=True).strip()
+
+    return answer or "I could not generate an answer. Please check with the manager."
+
+
+def save_packaging_items_from_xlsx(file, information_id):
+    """Extract structured box data by locating the packaging table headers."""
+    workbook = load_workbook(file, data_only=True)
+    items = []
+
+    for sheet in workbook.worksheets:
+        header_row = None
+        width_col = depth_col = height_col = product_col = box_col = description_col = None
+
+        # Find the row containing the actual packaging headers instead of assuming
+        # the spreadsheet always starts at a particular row.
+        for row_number in range(1, sheet.max_row + 1):
+            values = [sheet.cell(row_number, column).value for column in range(1, sheet.max_column + 1)]
+            normalized = {
+                str(value).strip().upper(): index + 1
+                for index, value in enumerate(values)
+                if value is not None
+            }
+
+            if all(key in normalized for key in ("W", "D", "H", "PRODUCT #", "BOX")):
+                header_row = row_number
+                width_col = normalized["W"]
+                depth_col = normalized["D"]
+                height_col = normalized["H"]
+                product_col = normalized["PRODUCT #"]
+                box_col = normalized["BOX"]
+                description_col = 2  # Column B contains the descriptive packaging name.
+                break
+
+        if header_row is None:
+            continue
+
+        for row_number in range(header_row + 1, sheet.max_row + 1):
+            width = sheet.cell(row_number, width_col).value
+            depth = sheet.cell(row_number, depth_col).value
+            height = sheet.cell(row_number, height_col).value
+            box_price = sheet.cell(row_number, box_col).value
+            product_number = sheet.cell(row_number, product_col).value
+            description = sheet.cell(row_number, description_col).value
+
+            if not all(isinstance(value, (int, float)) for value in (width, depth, height)):
+                continue
+
+            if not isinstance(box_price, (int, float)):
+                continue
+
+            # Skip non-box notes/rows without a product number when possible.
+            if product_number is None and description is None:
+                continue
+
+            items.append((
+                str(description).strip() if description is not None else "Box",
+                str(product_number).strip() if product_number is not None else None,
+                float(width), float(depth), float(height), float(box_price), information_id
+            ))
+
+    conn = get_db_connection()
+    conn.execute("DELETE FROM packaging_items WHERE source_information_id = ?", (information_id,))
+    conn.executemany(
+        """
+        INSERT INTO packaging_items
+        (description, product_number, width, depth, height, box_price, source_information_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        items
+    )
+    conn.commit()
+    conn.close()
+    return len(items)
+
+
+# ============================================================
+# AI INFORMATION FILE READING
+# ============================================================
+
+def read_pdf(file):
+
+    reader = PdfReader(file)
+
+    text = ""
+
+    for page in reader.pages:
+
+        page_text = page.extract_text()
+
+        if page_text:
+            text += page_text + "\n"
+
+    return text
+
+
+def read_docx(file):
+
+    document = Document(file)
+
+    text = ""
+
+    # Read normal paragraphs
+    for paragraph in document.paragraphs:
+
+        if paragraph.text.strip():
+            text += paragraph.text + "\n"
+
+    # Read tables
+    for table in document.tables:
+
+        for row in table.rows:
+
+            row_text = []
+
+            for cell in row.cells:
+                row_text.append(cell.text.strip())
+
+            text += " | ".join(row_text) + "\n"
+
+    return text
+
+
+def read_xlsx(file):
+
+    workbook = load_workbook(
+        file,
+        data_only=True
+    )
+
+    text = ""
+
+    for sheet in workbook.worksheets:
+
+        text += "\n--- " + sheet.title + " ---\n"
+
+        for row in sheet.iter_rows(values_only=True):
+
+            values = []
+
+            for value in row:
+
+                if value is not None:
+                    values.append(str(value))
+
+            if values:
+                text += " | ".join(values) + "\n"
+
+    return text
+
+
+def read_uploaded_file(file, extension):
+
+    if extension == "pdf":
+        return read_pdf(file)
+
+    if extension == "docx":
+        return read_docx(file)
+
+    if extension == "xlsx":
+        return read_xlsx(file)
+
+    return ""
+
+
+# ============================================================
+# LOGIN
+# ============================================================
+
+@app.route("/", methods=["GET", "POST"])
+def login():
+
+    if request.method == "POST":
+
+        username = request.form["username"]
+        password = request.form["password"]
+
+        conn = get_db_connection()
+
+        user = conn.execute(
+            "SELECT * FROM users WHERE username = ?",
+            (username,)
+        ).fetchone()
+
+        conn.close()
+
+        if user and check_password_hash(
+            user["password"],
+            password
+        ):
+
+            session["user_id"] = user["id"]
+            session["username"] = user["username"]
+            session["role"] = user["role"]
+
+            if user["role"] == "manager":
+                return redirect("/manager")
+
+            return redirect("/employee")
+
+    return render_template("login.html")
+
+
+# ============================================================
+# EMPLOYEE DASHBOARD
+# ============================================================
+
+@app.route("/employee")
+def employee():
+
+    if "user_id" not in session:
+        return redirect("/")
+
+    if session["role"] != "employee":
+        return redirect("/manager")
+
+    conn = get_db_connection()
+
+    clean_old_tasks(conn)
+
+    today = date.today().isoformat()
+
+    todays_tasks = conn.execute(
+        """
+        SELECT *
+        FROM tasks
+        WHERE employee_id = ?
+        AND task_date = ?
+        ORDER BY id
+        """,
+        (
+            session["user_id"],
+            today
+        )
+    ).fetchall()
+
+    week_start, week_end, week_days = get_week_dates(
+        date.today()
+    )
+
+    weekly_tasks = conn.execute(
+        """
+        SELECT *
+        FROM tasks
+        WHERE employee_id = ?
+        AND task_date BETWEEN ? AND ?
+        ORDER BY task_date, id
+        """,
+        (
+            session["user_id"],
+            week_start.isoformat(),
+            week_end.isoformat()
+        )
+    ).fetchall()
+
+    unread_messages = conn.execute(
+        """
+        SELECT COUNT(*)
+        FROM messages
+        WHERE recipient_id = ?
+        AND is_read = 0
+        """,
+        (session["user_id"],)
+    ).fetchone()[0]
+
+    conn.commit()
+    conn.close()
+
+    return render_template(
+        "employee.html",
+        username=session["username"],
+        todays_tasks=todays_tasks,
+        weekly_tasks=weekly_tasks,
+        unread_messages=unread_messages
+    )
+
+
+# ============================================================
+# EMPLOYEE TASKS
+# ============================================================
+
+@app.route("/all_tasks")
+def all_tasks():
+
+    if "user_id" not in session:
+        return redirect("/")
+
+    if session["role"] != "employee":
+        return redirect("/manager")
+
+    selected_date = get_week_from_request()
+
+    conn = get_db_connection()
+
+    clean_old_tasks(conn)
+
+    week_start, week_end, week_days = get_week_dates(
+        selected_date
+    )
+
+    tasks = conn.execute(
+        """
+        SELECT *
+        FROM tasks
+        WHERE employee_id = ?
+        AND task_date BETWEEN ? AND ?
+        ORDER BY task_date, id
+        """,
+        (
+            session["user_id"],
+            week_start.isoformat(),
+            week_end.isoformat()
+        )
+    ).fetchall()
+
+    for task in tasks:
+
+        task_date = datetime.strptime(
+            task["task_date"],
+            "%Y-%m-%d"
+        ).date()
+
+        for day in week_days:
+
+            if day["date"] == task_date:
+                day["tasks"].append(task)
+
+    previous_week = (
+        week_start - timedelta(days=7)
+    ).isoformat()
+
+    next_week = (
+        week_start + timedelta(days=7)
+    ).isoformat()
+
+    is_current_week = (
+        week_start <= date.today() <= week_end
+    )
+
+    conn.commit()
+    conn.close()
+
+    return render_template(
+        "allTasks.html",
+        week_start=week_start,
+        week_end=week_end,
+        week_days=week_days,
+        previous_week=previous_week,
+        next_week=next_week,
+        is_current_week=is_current_week
+    )
+
+
+# ============================================================
+# MANAGER DASHBOARD
+# ============================================================
+
+@app.route("/manager")
+def manager():
+
+    if "user_id" not in session:
+        return redirect("/")
+
+    if session["role"] != "manager":
+        return redirect("/employee")
+
+    conn = get_db_connection()
+
+    clean_old_tasks(conn)
+
+    today = date.today().isoformat()
+
+    todays_tasks = conn.execute(
+        """
+        SELECT
+            tasks.*,
+            users.username AS employee_name
+        FROM tasks
+        JOIN users
+        ON tasks.employee_id = users.id
+        WHERE tasks.task_date = ?
+        ORDER BY tasks.id
+        """,
+        (today,)
+    ).fetchall()
+
+    week_start, week_end, week_days = get_week_dates(
+        date.today()
+    )
+
+    weekly_tasks = conn.execute(
+        """
+        SELECT *
+        FROM tasks
+        WHERE task_date BETWEEN ? AND ?
+        """,
+        (
+            week_start.isoformat(),
+            week_end.isoformat()
+        )
+    ).fetchall()
+
+    employee_count = conn.execute(
+        """
+        SELECT COUNT(*)
+        FROM users
+        WHERE role = 'employee'
+        """
+    ).fetchone()[0]
+
+    unread_messages = conn.execute(
+        """
+        SELECT COUNT(*)
+        FROM messages
+        WHERE sender_id != ?
+        AND is_read = 0
+        """,
+        (session["user_id"],)
+    ).fetchone()[0]
+
+    conn.commit()
+    conn.close()
+
+    return render_template(
+        "manager.html",
+        username=session["username"],
+        todays_tasks=todays_tasks,
+        weekly_tasks=weekly_tasks,
+        employee_count=employee_count,
+        unread_messages=unread_messages
+    )
+
+
+# ============================================================
+# MANAGE TASKS
+# ============================================================
+
+@app.route("/manage_tasks")
+def manage_tasks():
+
+    if "user_id" not in session:
+        return redirect("/")
+
+    if session["role"] != "manager":
+        return redirect("/employee")
+
+    selected_date = get_week_from_request()
+
+    conn = get_db_connection()
+
+    clean_old_tasks(conn)
+
+    week_start, week_end, week_days = get_week_dates(
+        selected_date
+    )
+
+    tasks = conn.execute(
+        """
+        SELECT
+            tasks.*,
+            users.username AS employee_name
+        FROM tasks
+        JOIN users
+        ON tasks.employee_id = users.id
+        WHERE tasks.task_date BETWEEN ? AND ?
+        ORDER BY tasks.task_date, tasks.id
+        """,
+        (
+            week_start.isoformat(),
+            week_end.isoformat()
+        )
+    ).fetchall()
+
+    for task in tasks:
+
+        task_date = datetime.strptime(
+            task["task_date"],
+            "%Y-%m-%d"
+        ).date()
+
+        for day in week_days:
+
+            if day["date"] == task_date:
+                day["tasks"].append(task)
+
+    employees = conn.execute(
+        """
+        SELECT *
+        FROM users
+        WHERE role = 'employee'
+        ORDER BY username
+        """
+    ).fetchall()
+
+    previous_week = (
+        week_start - timedelta(days=7)
+    ).isoformat()
+
+    next_week = (
+        week_start + timedelta(days=7)
+    ).isoformat()
+
+    is_current_week = (
+        week_start <= date.today() <= week_end
+    )
+
+    conn.commit()
+    conn.close()
+
+    return render_template(
+        "manageTasks.html",
+        week_start=week_start,
+        week_end=week_end,
+        week_days=week_days,
+        previous_week=previous_week,
+        next_week=next_week,
+        is_current_week=is_current_week,
+        employees=employees
+    )
+
+
+# ============================================================
+# ADD TASK
+# ============================================================
+
+@app.route("/add_task", methods=["POST"])
+def add_task():
+
+    if "user_id" not in session:
+        return redirect("/")
+
+    if session["role"] != "manager":
+        return redirect("/employee")
+
+    employee_id = request.form["employee_id"]
+    title = request.form["title"]
+    description = request.form["description"]
+    task_date = request.form["task_date"]
+
+    conn = get_db_connection()
+
+    conn.execute(
+        """
+        INSERT INTO tasks
+        (
+            employee_id,
+            title,
+            description,
+            task_date
+        )
+        VALUES (?, ?, ?, ?)
+        """,
+        (
+            employee_id,
+            title,
+            description,
+            task_date
+        )
+    )
+
+    conn.commit()
+    conn.close()
+
+    return redirect(
+        request.referrer or "/manage_tasks"
+    )
+
+
+# ============================================================
+# DELETE TASK
+# ============================================================
+
+@app.route("/delete_task/<int:task_id>", methods=["POST"])
+def delete_task(task_id):
+
+    if "user_id" not in session:
+        return redirect("/")
+
+    if session["role"] != "manager":
+        return redirect("/employee")
+
+    conn = get_db_connection()
+
+    conn.execute(
+        "DELETE FROM tasks WHERE id = ?",
+        (task_id,)
+    )
+
+    conn.commit()
+    conn.close()
+
+    return redirect(
+        request.referrer or "/manage_tasks"
+    )
+
+
+# ============================================================
+# EMPLOYEES
+# ============================================================
+
+@app.route("/employees")
+def employees():
+
+    if "user_id" not in session:
+        return redirect("/")
+
+    if session["role"] != "manager":
+        return redirect("/employee")
+
+    conn = get_db_connection()
+
+    employees = conn.execute(
+        """
+        SELECT *
+        FROM users
+        WHERE role = 'employee'
+        ORDER BY username
+        """
+    ).fetchall()
+
+    conn.close()
+
+    return render_template(
+        "employees.html",
+        employees=employees
+    )
+
+
+# ============================================================
+# ADD EMPLOYEE
+# ============================================================
+
+@app.route("/add_employee", methods=["POST"])
+def add_employee():
+
+    if "user_id" not in session:
+        return redirect("/")
+
+    if session["role"] != "manager":
+        return redirect("/employee")
+
+    username = request.form["username"].strip()
+    password = request.form["password"]
+    name = request.form.get("name", username).strip() or username
+
+    conn = get_db_connection()
+
+    existing_user = conn.execute(
+        """
+        SELECT *
+        FROM users
+        WHERE username = ?
+        """,
+        (username,)
+    ).fetchone()
+
+    if existing_user:
+
+        conn.close()
+
+        return redirect("/employees")
+
+    conn.execute(
+        """
+        INSERT INTO users
+        (
+            name,
+            username,
+            password,
+            role
+        )
+        VALUES (?, ?, ?, ?)
+        """,
+        (
+            name,
+            username,
+            generate_password_hash(password),
+            "employee"
+        )
+    )
+
+    conn.commit()
+    conn.close()
+
+    return redirect("/employees")
+
+
+# ============================================================
+# DELETE EMPLOYEE
+# ============================================================
+
+@app.route("/delete_employee/<int:employee_id>", methods=["POST"])
+def delete_employee(employee_id):
+
+    if "user_id" not in session:
+        return redirect("/")
+
+    if session["role"] != "manager":
+        return redirect("/employee")
+
+    conn = get_db_connection()
+
+    # Delete employee's tasks
+    conn.execute(
+        """
+        DELETE FROM tasks
+        WHERE employee_id = ?
+        """,
+        (employee_id,)
+    )
+
+    # Delete messages involving employee
+    conn.execute(
+        """
+        DELETE FROM messages
+        WHERE sender_id = ?
+        OR recipient_id = ?
+        """,
+        (
+            employee_id,
+            employee_id
+        )
+    )
+
+    # Delete notifications
+    conn.execute(
+        """
+        DELETE FROM notifications
+        WHERE user_id = ?
+        """,
+        (employee_id,)
+    )
+
+    # Delete employee
+    conn.execute(
+        """
+        DELETE FROM users
+        WHERE id = ?
+        AND role = 'employee'
+        """,
+        (employee_id,)
+    )
+
+    conn.commit()
+    conn.close()
+
+    return redirect("/employees")
+
+
+@app.route("/change_employee_password/<int:employee_id>", methods=["POST"])
+def change_employee_password(employee_id):
+    if "user_id" not in session:
+        return redirect("/")
+    if session["role"] != "manager":
+        return redirect("/employee")
+    password = request.form.get("password", "")
+    if not password:
+        return redirect("/employees")
+    conn = get_db_connection()
+    conn.execute("UPDATE users SET password = ? WHERE id = ? AND role = 'employee'", (generate_password_hash(password), employee_id))
+    conn.commit()
+    conn.close()
+    return redirect("/employees")
+
+
+# ============================================================
+# EMPLOYEE ACCOUNT
+# ============================================================
+
+@app.route("/account")
+def account():
+
+    if "user_id" not in session:
+        return redirect("/")
+
+    if session["role"] != "employee":
+        return redirect("/manager")
+
+    return render_template(
+        "account.html",
+        username=session["username"]
+    )
+
+
+# ============================================================
+# EMPLOYEE CHANGE PASSWORD
+# ============================================================
+
+@app.route("/change_my_password", methods=["POST"])
+def change_my_password():
+
+    if "user_id" not in session:
+        return redirect("/")
+
+    if session["role"] != "employee":
+        return redirect("/manager")
+
+    current_password = request.form["current_password"]
+    new_password = request.form["new_password"]
+    confirm_password = request.form["confirm_password"]
+
+    conn = get_db_connection()
+
+    user = conn.execute(
+        """
+        SELECT *
+        FROM users
+        WHERE id = ?
+        """,
+        (session["user_id"],)
+    ).fetchone()
+
+    if user:
+
+        if check_password_hash(
+            user["password"],
+            current_password
+        ):
+
+            if new_password == confirm_password:
+
+                conn.execute(
+                    """
+                    UPDATE users
+                    SET password = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        generate_password_hash(new_password),
+                        session["user_id"]
+                    )
+                )
+
+                conn.commit()
+
+    conn.close()
+
+    return redirect("/account")
+
+
+# ============================================================
+# MANAGER ACCOUNT
+# ============================================================
+
+@app.route("/manager_account")
+def manager_account():
+
+    if "user_id" not in session:
+        return redirect("/")
+
+    if session["role"] != "manager":
+        return redirect("/employee")
+
+    return render_template(
+        "managerAccount.html",
+        username=session["username"]
+    )
+
+
+@app.route("/change_manager_account", methods=["POST"])
+def change_manager_account():
+
+    if "user_id" not in session:
+        return redirect("/")
+
+    if session["role"] != "manager":
+        return redirect("/employee")
+
+    current_password = request.form["current_password"]
+    new_username = request.form["new_username"].strip()
+    new_password = request.form["new_password"]
+    confirm_password = request.form["confirm_password"]
+
+    conn = get_db_connection()
+
+    user = conn.execute(
+        """
+        SELECT *
+        FROM users
+        WHERE id = ?
+        """,
+        (session["user_id"],)
+    ).fetchone()
+
+    if not user:
+
+        conn.close()
+        return redirect("/manager_account")
+
+    if not check_password_hash(
+        user["password"],
+        current_password
+    ):
+
+        conn.close()
+        return redirect("/manager_account")
+
+    # Make sure username isn't already being used
+    existing_user = conn.execute(
+        """
+        SELECT *
+        FROM users
+        WHERE username = ?
+        AND id != ?
+        """,
+        (
+            new_username,
+            session["user_id"]
+        )
+    ).fetchone()
+
+    if existing_user:
+
+        conn.close()
+        return redirect("/manager_account")
+
+    # Change password if one was entered
+    if new_password:
+
+        if new_password != confirm_password:
+
+            conn.close()
+            return redirect("/manager_account")
+
+        password = generate_password_hash(
+            new_password
+        )
+
+    else:
+
+        password = user["password"]
+
+    conn.execute(
+        """
+        UPDATE users
+        SET username = ?,
+            password = ?
+        WHERE id = ?
+        """,
+        (
+            new_username,
+            password,
+            session["user_id"]
+        )
+    )
+
+    conn.commit()
+    conn.close()
+
+    session["username"] = new_username
+
+    return redirect("/manager_account")
+
+
+# ============================================================
+# EMPLOYEE COMMUNICATION
+# ============================================================
+
+@app.route("/communication")
+def communication():
+
+    if "user_id" not in session:
+        return redirect("/")
+
+    if session["role"] != "employee":
+        return redirect("/manager")
+
+    conn = get_db_connection()
+
+    # Opening the page automatically marks messages as read
+    conn.execute(
+        """
+        UPDATE messages
+        SET is_read = 1
+        WHERE recipient_id = ?
+        """,
+        (session["user_id"],)
+    )
+
+    messages = conn.execute(
+        """
+        SELECT
+            messages.*,
+            users.username AS sender_name
+        FROM messages
+        JOIN users
+        ON messages.sender_id = users.id
+        WHERE messages.recipient_id = ?
+        ORDER BY messages.created_at DESC
+        """,
+        (session["user_id"],)
+    ).fetchall()
+
+    conn.commit()
+    conn.close()
+
+    return render_template(
+        "communication.html",
+        messages=messages
+    )
+
+
+# ============================================================
+# MANAGER COMMUNICATION
+# ============================================================
+
+@app.route("/manager_communication")
+def manager_communication():
+
+    if "user_id" not in session:
+        return redirect("/")
+
+    if session["role"] != "manager":
+        return redirect("/employee")
+
+    conn = get_db_connection()
+
+    messages = conn.execute(
+        """
+        SELECT
+            messages.*,
+            sender.username AS sender_name,
+            recipient.username AS recipient_name
+        FROM messages
+        JOIN users AS sender
+        ON messages.sender_id = sender.id
+        JOIN users AS recipient
+        ON messages.recipient_id = recipient.id
+        ORDER BY messages.created_at DESC
+        """
+    ).fetchall()
+
+    employees = conn.execute(
+        """
+        SELECT *
+        FROM users
+        WHERE role = 'employee'
+        ORDER BY username
+        """
+    ).fetchall()
+
+    # Messages sent to the manager are marked read
+    conn.execute(
+        """
+        UPDATE messages
+        SET is_read = 1
+        WHERE recipient_id = ?
+        """,
+        (session["user_id"],)
+    )
+
+    conn.commit()
+    conn.close()
+
+    return render_template(
+        "managerCommunication.html",
+        messages=messages,
+        employees=employees
+    )
+
+
+# ============================================================
+# SEND MESSAGE
+# ============================================================
+
+@app.route("/send_message", methods=["POST"])
+def send_message():
+
+    if "user_id" not in session:
+        return redirect("/")
+
+    if session["role"] != "manager":
+        return redirect("/employee")
+
+    recipient_id = request.form["recipient_id"]
+    subject = request.form.get("subject", "Message").strip() or "Message"
+    message = request.form.get("message", "").strip()
+
+    created_at = datetime.now().strftime(
+        "%Y-%m-%d %I:%M %p"
+    )
+
+    conn = get_db_connection()
+
+    conn.execute(
+        """
+        INSERT INTO messages
+        (
+            sender_id,
+            recipient_id,
+            subject,
+            message,
+            created_at,
+            is_read
+        )
+        VALUES (?, ?, ?, ?, ?, 0)
+        """,
+        (
+            session["user_id"],
+            recipient_id,
+            subject,
+            message,
+            created_at
+        )
+    )
+
+    conn.commit()
+    conn.close()
+
+    return redirect("/manager_communication")
+
+
+@app.route("/delete_message/<int:message_id>", methods=["POST"])
+def delete_message(message_id):
+    if "user_id" not in session:
+        return redirect("/")
+    conn = get_db_connection()
+    conn.execute("DELETE FROM messages WHERE id = ?", (message_id,))
+    conn.commit()
+    conn.close()
+    if session["role"] == "manager":
+        return redirect("/manager_communication")
+    return redirect("/communication")
+
+
+# ============================================================
+# AI INFORMATION
+# ============================================================
+
+@app.route("/ai_information")
+def ai_information():
+
+    if "user_id" not in session:
+        return redirect("/")
+
+    if session["role"] != "manager":
+        return redirect("/employee")
+
+    conn = get_db_connection()
+
+    information = conn.execute(
+        """
+        SELECT *
+        FROM ai_information
+        ORDER BY created_at DESC
+        """
+    ).fetchall()
+
+    conn.close()
+
+    return render_template(
+        "aiInformation.html",
+        information=information
+    )
+
+
+# ============================================================
+# ADD AI INFORMATION
+# ============================================================
+
+@app.route("/add_ai_information", methods=["POST"])
+def add_ai_information():
+
+    if "user_id" not in session:
+        return redirect("/")
+
+    if session["role"] != "manager":
+        return redirect("/employee")
+
+    title = request.form.get(
+        "title",
+        ""
+    ).strip()
+
+    manual_information = request.form.get(
+        "information",
+        ""
+    ).strip()
+
+    uploaded_file = request.files.get(
+        "file"
+    )
+
+    filename = None
+    file_type = None
+    file_information = ""
+
+    try:
+
+        if uploaded_file and uploaded_file.filename:
+
+            if allowed_file(
+                uploaded_file.filename
+            ):
+
+                filename = uploaded_file.filename
+
+                file_type = get_file_extension(
+                    filename
+                )
+
+                file_information = read_uploaded_file(
+                    uploaded_file,
+                    file_type
+                )
+
+        # If there is no title, use the uploaded filename
+        if not title:
+
+            if filename:
+                title = filename
+            else:
+                title = "Store Information"
+
+        # Combine typed information and file information
+        combined_information = ""
+
+        if manual_information:
+
+            combined_information += manual_information
+
+        if file_information:
+
+            if combined_information:
+                combined_information += "\n\n"
+
+            combined_information += file_information
+
+        if not combined_information:
+
+            combined_information = "No information was provided."
+
+        created_at = datetime.now().strftime(
+            "%Y-%m-%d %I:%M %p"
+        )
+
+        conn = get_db_connection()
+
+        cursor = conn.execute(
+            """
+            INSERT INTO ai_information
+            (
+                title,
+                filename,
+                file_type,
+                information,
+                created_at
+            )
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                title,
+                filename,
+                file_type,
+                combined_information,
+                created_at
+            )
+        )
+
+        information_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+
+        if file_type == "xlsx":
+            uploaded_file.stream.seek(0)
+            save_packaging_items_from_xlsx(uploaded_file.stream, information_id)
+
+    except Exception as error:
+        print("AI information upload error:", error)
+
+    return redirect("/ai_information")
+
+
+# ============================================================
+# VIEW AI INFORMATION
+# ============================================================
+
+@app.route("/view_ai_information/<int:information_id>")
+def view_ai_information(information_id):
+
+    if "user_id" not in session:
+        return redirect("/")
+
+    if session["role"] != "manager":
+        return redirect("/employee")
+
+    conn = get_db_connection()
+
+    information = conn.execute(
+        """
+        SELECT *
+        FROM ai_information
+        WHERE id = ?
+        """,
+        (information_id,)
+    ).fetchone()
+
+    conn.close()
+
+    if not information:
+        return redirect("/ai_information")
+
+    return render_template(
+        "viewAiInformation.html",
+        information=information
+    )
+
+
+# ============================================================
+# DELETE AI INFORMATION
+# ============================================================
+
+@app.route(
+    "/delete_ai_information/<int:information_id>",
+    methods=["POST"]
+)
+def delete_ai_information(information_id):
+
+    if "user_id" not in session:
+        return redirect("/")
+
+    if session["role"] != "manager":
+        return redirect("/employee")
+
+    conn = get_db_connection()
+
+    conn.execute(
+        """
+        DELETE FROM packaging_items
+        WHERE source_information_id = ?
+        """,
+        (information_id,)
+    )
+
+    conn.execute(
+        """
+        DELETE FROM ai_information
+        WHERE id = ?
+        """,
+        (information_id,)
+    )
+
+    conn.commit()
+    conn.close()
+
+    return redirect("/ai_information")
+
+
+# ============================================================
+# ASK QWEN
+# ============================================================
+
+@app.route("/ai_assistant", methods=["GET", "POST"])
+def ai_assistant():
+
+    if "user_id" not in session:
+        return redirect("/")
+
+    question = ""
+    answer = ""
+    error = ""
+    sources = []
+
+    if request.method == "POST":
+        question = request.form.get("question", "").strip()
+
+        if not question:
+            error = "Please enter a question."
+        else:
+            try:
+                packaging_result = retrieve_packaging_answer(question)
+
+                if packaging_result is not None:
+                    sources = packaging_result.get("sources", [])
+                    # Packaging dimensions and prices are deterministic structured data.
+                    # Return the calculated result directly instead of sending it through Qwen.
+                    answer = packaging_result.get("answer") or packaging_result["context"]
+                else:
+                    sources = retrieve_ai_information(question)
+                    context = "\n\n".join(
+                        f"SOURCE: {source['title']}\n{source['information'] or ''}"
+                        for source in sources
+                    )
+                    answer = ask_qwen(question, context, sources)
+            except Exception as exc:
+                print("Qwen error:", exc)
+                error = (
+                    "Qwen could not be started. Make sure the required packages are installed "
+                    "and that the Qwen model can be downloaded on this computer."
+                )
+
+    return render_template(
+        "aiAssistant.html",
+        question=question,
+        answer=answer,
+        error=error,
+        sources=sources
+    )
+
+
+# ============================================================
+# LOGOUT
+# ============================================================
+
+@app.route("/logout")
+def logout():
+
+    session.clear()
+
+    return redirect("/")
+
+
+# ============================================================
+# START APPLICATION
+# ============================================================
+
+initialize_database()
+
+if __name__ == "__main__":
+    app.run(debug=True)
