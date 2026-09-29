@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>My Account</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+
+    <!-- Hamburger Button -->
+    <button class="menuButton" id="menuButton" onclick="openMenu()">☰</button>
+
+    <!-- Sidebar -->
+    <div class="sidebar" id="sidebar">
+
+        <button class="closeButton" onclick="closeMenu()">×</button>
+
+        <h2>Employee Menu</h2>
+
+        <a href="{{ url_for('employee') }}">Dashboard</a>
+        <a href="{{ url_for('all_tasks') }}">My Tasks</a>
+        <a href="{{ url_for('communication') }}">Messages</a>
+        <a href="{{ url_for('ai_assistant') }}">Ask AI</a>
+        <a href="{{ url_for('account') }}">My Account</a>
+        <a href="{{ url_for('logout') }}">Logout</a>
+
+    </div>
+
+
+    <!-- Main Content -->
+    <div class="mainContent">
+
+        <div class="pageHeader">
+
+            <div>
+                <h1>My Account</h1>
+                <p>Manage your account and password.</p>
+            </div>
+
+        </div>
+
+
+        <!-- Account Card -->
+        <div class="informationCard">
+
+            <h2>Account Information</h2>
+
+            <div class="accountInfo">
+
+                <p>
+                    <strong>Username:</strong>
+                    {{ username }}
+                </p>
+
+            </div>
+
+        </div>
+
+
+        <!-- Change Password -->
+        <div class="informationCard">
+
+            <h2>Change Password</h2>
+
+            <p>
+                Enter your current password and choose a new password.
+            </p>
+
+
+            <form
+                action="{{ url_for('change_my_password') }}"
+                method="POST"
+            >
+
+                <!-- Current Password -->
+                <div class="formGroup">
+
+                    <label for="currentPassword">
+                        Current Password
+                    </label>
+
+                    <div class="passwordInput">
+
+                        <input
+                            type="password"
+                            id="currentPassword"
+                            name="current_password"
+                            required
+                        >
+
+                        <button
+                            type="button"
+                            class="showPasswordButton"
+                            onclick="togglePassword('currentPassword', this)"
+                        >
+                            Show
+                        </button>
+
+                    </div>
+
+                </div>
+
+
+                <!-- New Password -->
+                <div class="formGroup">
+
+                    <label for="newPassword">
+                        New Password
+                    </label>
+
+                    <div class="passwordInput">
+
+                        <input
+                            type="password"
+                            id="newPassword"
+                            name="new_password"
+                            required
+                        >
+
+                        <button
+                            type="button"
+                            class="showPasswordButton"
+                            onclick="togglePassword('newPassword', this)"
+                        >
+                            Show
+                        </button>
+
+                    </div>
+
+                </div>
+
+
+                <!-- Confirm Password -->
+                <div class="formGroup">
+
+                    <label for="confirmPassword">
+                        Confirm New Password
+                    </label>
+
+                    <div class="passwordInput">
+
+                        <input
+                            type="password"
+                            id="confirmPassword"
+                            name="confirm_password"
+                            required
+                        >
+
+                        <button
+                            type="button"
+                            class="showPasswordButton"
+                            onclick="togglePassword('confirmPassword', this)"
+                        >
+                            Show
+                        </button>
+
+                    </div>
+
+                </div>
+
+
+                <button
+                    type="submit"
+                    class="primaryButton"
+                >
+                    Change Password
+                </button>
+
+            </form>
+
+        </div>
+
+    </div>
+
+
+    <script>
+
+        function openMenu() {
+
+            document.getElementById("sidebar").classList.add("open");
+
+            document.getElementById("menuButton").style.display = "none";
+
+        }
+
+
+        function closeMenu() {
+
+            document.getElementById("sidebar").classList.remove("open");
+
+            document.getElementById("menuButton").style.display = "block";
+
+        }
+
+
+        document.addEventListener("click", function(event) {
+
+            var sidebar = document.getElementById("sidebar");
+            var menuButton = document.getElementById("menuButton");
+
+            if (
+                sidebar.classList.contains("open") &&
+                !sidebar.contains(event.target) &&
+                event.target !== menuButton
+            ) {
+
+                closeMenu();
+
+            }
+
+        });
+
+
+        function togglePassword(inputId, button) {
+
+            var input = document.getElementById(inputId);
+
+            if (input.type === "password") {
+
+                input.type = "text";
+                button.textContent = "Hide";
+
+            } else {
+
+                input.type = "password";
+                button.textContent = "Show";
+
+            }
+
+        }
+
+    </script>
+
+</body>
+</html>
