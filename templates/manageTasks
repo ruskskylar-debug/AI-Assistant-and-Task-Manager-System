@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Manage Tasks</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+
+    <!-- Hamburger Button -->
+    <button class="menuButton" id="menuButton" onclick="openMenu()">☰</button>
+
+    <!-- Sidebar -->
+    <div class="sidebar" id="sidebar">
+
+        <button class="closeButton" onclick="closeMenu()">×</button>
+
+        <h2>Manager Menu</h2>
+
+        <a href="{{ url_for('manager') }}">Dashboard</a>
+        <a href="{{ url_for('manage_tasks') }}">Tasks</a>
+        <a href="{{ url_for('employees') }}">Employees</a>
+        <a href="{{ url_for('manager_communication') }}">Messages</a>
+        <a href="{{ url_for('ai_information') }}">AI Information</a>
+        <a href="{{ url_for('ai_assistant') }}">Ask AI</a>
+        <a href="{{ url_for('manager_account') }}">My Account</a>
+        <a href="{{ url_for('logout') }}">Logout</a>
+
+    </div>
+
+
+    <!-- Main Content -->
+    <div class="mainContent">
+
+        <div class="pageHeader">
+
+            <div>
+                <h1>Manage Tasks</h1>
+                <p>View and manage employee tasks for the week.</p>
+            </div>
+
+        </div>
+
+
+        <!-- Week Navigation -->
+        <div class="weekNavigation">
+
+            <a
+                href="{{ url_for('manage_tasks', week=previous_week) }}"
+                class="secondaryButton"
+            >
+                ← Previous Week
+            </a>
+
+
+            <div class="weekTitle">
+
+                <h2>
+                    {{ week_start.strftime('%B %d') }}
+                    -
+                    {{ week_end.strftime('%B %d, %Y') }}
+                </h2>
+
+                {% if is_current_week %}
+
+                    <span class="currentWeekLabel">
+                        Current Week
+                    </span>
+
+                {% endif %}
+
+            </div>
+
+
+            <a
+                href="{{ url_for('manage_tasks', week=next_week) }}"
+                class="secondaryButton"
+            >
+                Next Week →
+            </a>
+
+        </div>
+
+
+        <!-- Today Button -->
+        {% if not is_current_week %}
+
+            <div class="todayButtonContainer">
+
+                <a
+                    href="{{ url_for('manage_tasks') }}"
+                    class="primaryButton"
+                >
+                    Go to Today
+                </a>
+
+            </div>
+
+        {% endif %}
+
+
+        <!-- Weekly Calendar -->
+        <div class="weeklyCalendar managerCalendar">
+
+            {% for day in week_days %}
+
+                <div
+                    class="dayColumn
+                    {% if day['is_today'] %}todayColumn{% endif %}"
+                >
+
+                    <!-- Day Header -->
+                    <div class="dayHeader">
+
+                        <div class="dayName">
+                            {{ day['day_name'] }}
+                        </div>
+
+                        <div class="dayDate">
+                            {{ day['date'].strftime('%b %d') }}
+                        </div>
+
+                        {% if day['is_today'] %}
+
+                            <span class="todayLabel">
+                                TODAY
+                            </span>
+
+                        {% endif %}
+
+                    </div>
+
+
+                    <!-- Tasks -->
+                    <div class="dayTasks">
+
+                        {% if day['tasks'] %}
+
+                            {% for task in day['tasks'] %}
+
+                                <div class="managerTaskCard">
+
+                                    <div class="taskInformation">
+
+                                        <h3>
+                                            {{ task['title'] }}
+                                        </h3>
+
+                                        <p class="employeeName">
+                                            Assigned to:
+                                            <strong>
+                                                {{ task['employee_name'] }}
+                                            </strong>
+                                        </p>
+
+                                        {% if task['description'] %}
+
+                                            <p>
+                                                {{ task['description'] }}
+                                            </p>
+
+                                        {% endif %}
+
+                                    </div>
+
+
+                                    <!-- Delete Task -->
+                                    <form
+                                        action="{{ url_for('delete_task', task_id=task['id']) }}"
+                                        method="POST"
+                                        onsubmit="return confirmDelete();"
+                                    >
+
+                                        <button
+                                            type="submit"
+                                            class="deleteButton smallDeleteButton"
+                                        >
+                                            Delete
+                                        </button>
+
+                                    </form>
+
+                                </div>
+
+                            {% endfor %}
+
+                        {% else %}
+
+                            <div class="noTasks">
+
+                                <span>No tasks</span>
+
+                            </div>
+
+                        {% endif %}
+
+                    </div>
+
+                </div>
+
+            {% endfor %}
+
+        </div>
+
+
+        <!-- Add Task -->
+        <div class="dashboardSection">
+
+            <div class="sectionHeader">
+
+                <div>
+                    <h2>Add Task</h2>
+
+                    <p>
+                        Create a task and assign it to an employee.
+                    </p>
+                </div>
+
+            </div>
+
+
+            <form
+                action="{{ url_for('add_task') }}"
+                method="POST"
+                class="taskForm"
+            >
+
+                <!-- Employee -->
+                <div class="formGroup">
+
+                    <label for="employee">
+                        Employee
+                    </label>
+
+                    <select
+                        id="employee"
+                        name="employee_id"
+                        required
+                    >
+
+                        <option value="">
+                            Select an employee
+                        </option>
+
+                        {% for employee in employees %}
+
+                            <option value="{{ employee['id'] }}">
+                                {{ employee['username'] }}
+                            </option>
+
+                        {% endfor %}
+
+                    </select>
+
+                </div>
+
+
+                <!-- Task Title -->
+                <div class="formGroup">
+
+                    <label for="title">
+                        Task
+                    </label>
+
+                    <input
+                        type="text"
+                        id="title"
+                        name="title"
+                        placeholder="Enter task"
+                        required
+                    >
+
+                </div>
+
+
+                <!-- Description -->
+                <div class="formGroup">
+
+                    <label for="description">
+                        Description
+                    </label>
+
+                    <textarea
+                        id="description"
+                        name="description"
+                        rows="4"
+                        placeholder="Optional task details"
+                    ></textarea>
+
+                </div>
+
+
+                <!-- Date -->
+                <div class="formGroup">
+
+                    <label for="taskDate">
+                        Date
+                    </label>
+
+                    <input
+                        type="date"
+                        id="taskDate"
+                        name="task_date"
+                        required
+                    >
+
+                </div>
+
+
+                <button
+                    type="submit"
+                    class="primaryButton"
+                >
+                    Add Task
+                </button>
+
+            </form>
+
+        </div>
+
+
+        <!-- Information -->
+        <div class="taskInformation">
+
+            <p>
+                Tasks are organized Sunday through Saturday.
+                Older tasks are automatically removed after approximately
+                one month.
+            </p>
+
+        </div>
+
+    </div>
+
+
+    <script>
+
+        function openMenu() {
+
+            document.getElementById("sidebar").classList.add("open");
+
+            document.getElementById("menuButton").style.display = "none";
+
+        }
+
+
+        function closeMenu() {
+
+            document.getElementById("sidebar").classList.remove("open");
+
+            document.getElementById("menuButton").style.display = "block";
+
+        }
+
+
+        document.addEventListener("click", function(event) {
+
+            var sidebar = document.getElementById("sidebar");
+            var menuButton = document.getElementById("menuButton");
+
+            if (
+                sidebar.classList.contains("open") &&
+                !sidebar.contains(event.target) &&
+                event.target !== menuButton
+            ) {
+
+                closeMenu();
+
+            }
+
+        });
+
+
+        function confirmDelete() {
+
+            return confirm(
+                "Are you sure you want to delete this task?"
+            );
+
+        }
+
+    </script>
+
+</body>
+</html>
