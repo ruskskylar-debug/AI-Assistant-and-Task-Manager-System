@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>View AI Information</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+
+    <!-- Hamburger Button -->
+    <button class="menuButton" id="menuButton" onclick="openMenu()">☰</button>
+
+    <!-- Sidebar -->
+    <div class="sidebar" id="sidebar">
+
+        <button class="closeButton" onclick="closeMenu()">×</button>
+
+        <h2>Manager Menu</h2>
+
+        <a href="{{ url_for('manager') }}">Dashboard</a>
+        <a href="{{ url_for('manage_tasks') }}">Tasks</a>
+        <a href="{{ url_for('employees') }}">Employees</a>
+        <a href="{{ url_for('manager_communication') }}">Messages</a>
+        <a href="{{ url_for('ai_information') }}">AI Information</a>
+        <a href="{{ url_for('ai_assistant') }}">Ask AI</a>
+    <a href="{{ url_for('manager_account') }}">My Account</a>
+        <a href="{{ url_for('logout') }}">Logout</a>
+
+    </div>
+
+    <!-- Main Content -->
+    <div class="mainContent">
+
+        <div class="pageHeader">
+            <div>
+                <h1>AI Information</h1>
+                <p>Review information that has been provided to the AI assistant.</p>
+            </div>
+
+            <a href="{{ url_for('ai_information') }}" class="secondaryButton">
+                Back to AI Information
+            </a>
+        </div>
+
+        <!-- Information Card -->
+        <div class="informationCard">
+
+            <h2>{{ information['title'] }}</h2>
+
+            <div class="informationDetails">
+
+                {% if information['filename'] %}
+                    <p>
+                        <strong>File:</strong>
+                        {{ information['filename'] }}
+                    </p>
+
+                    <p>
+                        <strong>File Type:</strong>
+                        {{ information['file_type']|upper }}
+                    </p>
+                {% else %}
+                    <p>
+                        <strong>Source:</strong>
+                        Manually entered information
+                    </p>
+                {% endif %}
+
+                <p>
+                    <strong>Added:</strong>
+                    {{ information['created_at'] }}
+                </p>
+
+            </div>
+
+            <hr>
+
+            <!-- Saved Information -->
+            <div class="aiInformationText">
+
+                <h3>Information</h3>
+
+                {% if information['information'] %}
+
+                    <div class="informationText">
+                        {{ information['information'] }}
+                    </div>
+
+                {% else %}
+
+                    <p class="emptyMessage">
+                        No information was saved for this entry.
+                    </p>
+
+                {% endif %}
+
+            </div>
+
+        </div>
+
+        <!-- Delete -->
+        <div class="dangerSection">
+
+            <h3>Delete Information</h3>
+
+            <p>
+                Deleting this information will remove it from the AI's
+                available store knowledge.
+            </p>
+
+            <form
+                action="{{ url_for('delete_ai_information', information_id=information['id']) }}"
+                method="POST"
+                onsubmit="return confirmDelete();"
+            >
+
+                <button type="submit" class="deleteButton">
+                    Delete Information
+                </button>
+
+            </form>
+
+        </div>
+
+    </div>
+
+
+    <script>
+
+        function openMenu() {
+            document.getElementById("sidebar").classList.add("open");
+            document.getElementById("menuButton").style.display = "none";
+        }
+
+        function closeMenu() {
+            document.getElementById("sidebar").classList.remove("open");
+            document.getElementById("menuButton").style.display = "block";
+        }
+
+        document.addEventListener("click", function(event) {
+
+            var sidebar = document.getElementById("sidebar");
+            var menuButton = document.getElementById("menuButton");
+
+            if (
+                sidebar.classList.contains("open") &&
+                !sidebar.contains(event.target) &&
+                event.target !== menuButton
+            ) {
+                closeMenu();
+            }
+
+        });
+
+        function confirmDelete() {
+            return confirm(
+                "Are you sure you want to delete this AI information? This cannot be undone."
+            );
+        }
+
+    </script>
+
+</body>
+</html>
