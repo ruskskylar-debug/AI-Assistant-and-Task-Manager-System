@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Messages</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<button class="menuButton" id="menuButton" onclick="openMenu()">☰</button>
+
+<div class="sidebar" id="sidebar">
+    <button class="closeButton" onclick="closeMenu()">×</button>
+    <h2>UPS Store</h2>
+    <a href="{{ url_for('manager') }}">Dashboard</a>
+    <a href="{{ url_for('manage_tasks') }}">Tasks</a>
+    <a href="{{ url_for('employees') }}">Employees</a>
+    <a href="{{ url_for('manager_communication') }}" class="activeMenuItem">Messages</a>
+    <a href="{{ url_for('ai_information') }}">AI Information</a>
+    <a href="{{ url_for('ai_assistant') }}">Ask AI</a>
+    <a href="{{ url_for('manager_account') }}">My Account</a>
+    <a href="{{ url_for('logout') }}">Logout</a>
+</div>
+
+<div class="mainContent">
+    <div class="pageHeader">
+        <div>
+            <h1>Messages</h1>
+            <p>Send and review messages between the manager and employees.</p>
+        </div>
+    </div>
+
+    <div class="messagePageGrid">
+        <section class="messageComposeCard">
+            <h2>Send a Message</h2>
+            <p>Send a direct message to an employee.</p>
+            <form action="{{ url_for('send_message') }}" method="POST">
+                <label>Employee</label>
+                <select name="recipient_id" required>
+                    <option value="" disabled selected>Select an employee</option>
+                    {% for employee in employees %}
+                    <option value="{{ employee['id'] }}">{{ employee['username'] }}</option>
+                    {% endfor %}
+                </select>
+
+                <label>Subject</label>
+                <input type="text" name="subject" placeholder="Message subject" required>
+
+                <label>Message</label>
+                <textarea name="message" rows="7" placeholder="Type your message..." required></textarea>
+
+                <button type="submit" class="primaryButton">Send Message</button>
+            </form>
+        </section>
+
+        <section class="messageListSection">
+            <div class="sectionHeader">
+                <div>
+                    <h2>Recent Messages</h2>
+                    <p>{{ messages|length }} message{% if messages|length != 1 %}s{% endif %}</p>
+                </div>
+            </div>
+
+            <div class="messageList">
+                {% for message in messages %}
+                <article class="messageDetailCard">
+                    <div class="messageDetailHeader">
+                        <div>
+                            <h3>{{ message['subject'] }}</h3>
+                            <p>From <strong>{{ message['sender_name'] }}</strong> to <strong>{{ message['recipient_name'] }}</strong></p>
+                        </div>
+                        <span class="messageDate">{{ message['created_at'] }}</span>
+                    </div>
+                    <div class="messageBody">{{ message['message'] }}</div>
+                    <form action="{{ url_for('delete_message', message_id=message['id']) }}" method="POST" onsubmit="return confirm('Delete this message?');">
+                        <button type="submit" class="deleteButton smallDelete">Delete</button>
+                    </form>
+                </article>
+                {% else %}
+                <div class="emptyState">
+                    <h3>No messages yet</h3>
+                    <p>Messages sent between the manager and employees will appear here.</p>
+                </div>
+                {% endfor %}
+            </div>
+        </section>
+    </div>
+</div>
+
+<script>
+function openMenu() {
+    document.getElementById("sidebar").classList.add("open");
+    document.getElementById("menuButton").style.display = "none";
+}
+function closeMenu() {
+    document.getElementById("sidebar").classList.remove("open");
+    document.getElementById("menuButton").style.display = "block";
+}
+document.addEventListener("click", function(event) {
+    const sidebar = document.getElementById("sidebar");
+    const button = document.getElementById("menuButton");
+    if (sidebar.classList.contains("open") && !sidebar.contains(event.target) && !button.contains(event.target)) closeMenu();
+});
+</script>
+</body>
+</html>
