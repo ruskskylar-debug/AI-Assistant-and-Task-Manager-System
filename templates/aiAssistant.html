@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Ask Store AI</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<button class="menuButton" id="menuButton" onclick="openMenu()">☰</button>
+<div class="sidebar" id="sidebar">
+    <button class="closeButton" onclick="closeMenu()">×</button>
+    <h2>{% if session['role'] == 'manager' %}Manager Menu{% else %}Employee Menu{% endif %}</h2>
+    {% if session['role'] == 'manager' %}
+        <a href="{{ url_for('manager') }}">Dashboard</a>
+        <a href="{{ url_for('manage_tasks') }}">Tasks</a>
+        <a href="{{ url_for('employees') }}">Employees</a>
+        <a href="{{ url_for('manager_communication') }}">Messages</a>
+        <a href="{{ url_for('ai_information') }}">AI Information</a>
+        <a href="{{ url_for('ai_assistant') }}" class="activeMenuItem">Ask AI</a>
+        <a href="{{ url_for('manager_account') }}">My Account</a>
+    {% else %}
+        <a href="{{ url_for('employee') }}">Dashboard</a>
+        <a href="{{ url_for('all_tasks') }}">My Tasks</a>
+        <a href="{{ url_for('communication') }}">Messages</a>
+        <a href="{{ url_for('ai_assistant') }}" class="activeMenuItem">Ask AI</a>
+        <a href="{{ url_for('account') }}">My Account</a>
+    {% endif %}
+    <a href="{{ url_for('logout') }}">Logout</a>
+</div>
+<div class="mainContent">
+    <div class="pageHeader">
+        <h1>Ask Store AI</h1>
+        <p>Ask questions using the store information saved by the manager.</p>
+    </div>
+    <section class="aiQuestionCard">
+        <form method="POST" action="{{ url_for('ai_assistant') }}">
+            <label for="question">Your Question</label>
+            <textarea id="question" name="question" rows="5" placeholder="Example: What is the smallest box for an item that is 8 x 5 x 2?" required>{{ question }}</textarea>
+            <button type="submit" class="primaryButton">Ask AI</button>
+        </form>
+    </section>
+    {% if error %}
+    <div class="aiError">{{ error }}</div>
+    {% endif %}
+    {% if answer %}
+    <section class="aiAnswerCard">
+        <h2>Answer</h2>
+        <div class="aiAnswerText">{{ answer }}</div>
+        {% if sources %}
+        <div class="aiSources">
+            <h3>Information used</h3>
+            {% for source in sources %}
+                <div class="aiSourceItem">{{ source['title'] }}{% if source['filename'] %} — {{ source['filename'] }}{% endif %}</div>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </section>
+    {% endif %}
+</div>
+<script>
+function openMenu(){document.getElementById('sidebar').classList.add('open');document.getElementById('menuButton').style.display='none';}
+function closeMenu(){document.getElementById('sidebar').classList.remove('open');document.getElementById('menuButton').style.display='block';}
+document.addEventListener('click',function(event){const sidebar=document.getElementById('sidebar');const button=document.getElementById('menuButton');if(sidebar.classList.contains('open')&&!sidebar.contains(event.target)&&!button.contains(event.target))closeMenu();});
+</script>
+</body>
+</html>
