@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+
+<html>
+<head>
+    <title>UPS Store Login</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body class="login-page">
+
+
+<div class="login-container">
+
+    <div class="login-card">
+
+        <div class="login-header">
+
+            <div class="login-icon">
+                UPS
+            </div>
+
+            <h1>Welcome Back!</h1>
+
+            <p>
+                Sign in to access your store dashboard.
+            </p>
+
+        </div>
+
+
+        {% if error %}
+
+        <div class="login-error">
+            {{ error }}
+        </div>
+
+        {% endif %}
+
+
+        <form method="POST">
+
+            <label>Username</label>
+
+            <input
+                type="text"
+                name="username"
+                placeholder="Enter your username"
+                required
+            >
+
+
+            <label>Password</label>
+
+            <input
+                type="password"
+                name="password"
+                placeholder="Enter your password"
+                required
+            >
+
+
+            <button type="submit" class="login-button">
+                Sign In
+            </button>
+
+        </form>
+
+
+        <p class="login-footer">
+            Store Employee Portal
+        </p>
+
+    </div>
+
+</div>
+
+
+</body>
+</html>
