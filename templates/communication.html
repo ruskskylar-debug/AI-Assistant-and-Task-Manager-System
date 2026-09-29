@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Messages</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+
+    <!-- Hamburger Button -->
+    <button class="menuButton" id="menuButton" onclick="openMenu()">☰</button>
+
+    <!-- Sidebar -->
+    <div class="sidebar" id="sidebar">
+
+        <button class="closeButton" onclick="closeMenu()">×</button>
+
+        <h2>Employee Menu</h2>
+
+        <a href="{{ url_for('employee') }}">Dashboard</a>
+        <a href="{{ url_for('all_tasks') }}">My Tasks</a>
+        <a href="{{ url_for('communication') }}">Messages</a>
+        <a href="{{ url_for('ai_assistant') }}">Ask AI</a>
+        <a href="{{ url_for('account') }}">My Account</a>
+        <a href="{{ url_for('logout') }}">Logout</a>
+
+    </div>
+
+
+    <!-- Main Content -->
+    <div class="mainContent">
+
+        <div class="pageHeader">
+
+            <div>
+                <h1>Messages</h1>
+                <p>Messages from your manager.</p>
+            </div>
+
+        </div>
+
+
+        <!-- Messages -->
+        <div class="messageList">
+
+            {% if messages %}
+
+                {% for message in messages %}
+
+                    <div class="messageCard">
+
+                        <div class="messageHeader">
+
+                            <div>
+                                <h2>{{ message['subject'] }}</h2>
+
+                                <p class="messageSender">
+                                    From: {{ message['sender_name'] }}
+                                </p>
+                            </div>
+
+                            <div class="messageDate">
+                                {{ message['created_at'] }}
+                            </div>
+
+                        </div>
+
+
+                        <div class="messageBody">
+
+                            <p>
+                                {{ message['message'] }}
+                            </p>
+
+                        </div>
+
+                    </div>
+
+                {% endfor %}
+
+            {% else %}
+
+                <div class="emptyState">
+
+                    <h3>No messages</h3>
+
+                    <p>
+                        You don't have any messages right now.
+                    </p>
+
+                </div>
+
+            {% endif %}
+
+        </div>
+
+    </div>
+
+
+    <script>
+
+        function openMenu() {
+
+            document.getElementById("sidebar").classList.add("open");
+
+            document.getElementById("menuButton").style.display = "none";
+
+        }
+
+
+        function closeMenu() {
+
+            document.getElementById("sidebar").classList.remove("open");
+
+            document.getElementById("menuButton").style.display = "block";
+
+        }
+
+
+        document.addEventListener("click", function(event) {
+
+            var sidebar = document.getElementById("sidebar");
+            var menuButton = document.getElementById("menuButton");
+
+            if (
+                sidebar.classList.contains("open") &&
+                !sidebar.contains(event.target) &&
+                event.target !== menuButton
+            ) {
+
+                closeMenu();
+
+            }
+
+        });
+
+    </script>
+
+</body>
+</html>
